@@ -25,7 +25,7 @@ LOCAL_SRC_FILES := $(SRC_FILES)
 
 LOCAL_JS_FILES := $(JS_FILES)
 
-LOCAL_STATIC_LIBRARIES := libv8
+LOCAL_STATIC_LIBRARIES := libv8_base libv8_libbase libv8_libplatform libv8_nosnapshot
 
 include $(BUILD_SHARED_LIBRARY)
 
