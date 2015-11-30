@@ -631,7 +631,7 @@ jobject TypeConverter::jsValueToJavaObject(v8::Isolate* isolate, JNIEnv *env, v8
 			return javaObject->getJavaObject();
 		} else {
 			// Unwrap hyperloop JS wrappers to get native java proxy
-			v8::Local<String> nativeString = FIXED_ONE_BYTE_STRING("$native");
+			v8::Local<String> nativeString = FIXED_ONE_BYTE_STRING(isolate, "$native");
 			if (jsObject->HasOwnProperty(nativeString)) {
 				v8::Local<v8::Value> nativeObject = jsObject->GetRealNamedProperty(nativeString);
 				jsObject = nativeObject->ToObject();
