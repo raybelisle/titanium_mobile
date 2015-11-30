@@ -35,9 +35,11 @@ namespace titanium {
 Persistent<Context> V8Runtime::globalContext;
 Persistent<Object> V8Runtime::krollGlobalObject;
 Persistent<Array> V8Runtime::moduleContexts;
+Persistent<Object> V8Runtime::moduleObject;
+Persistent<Function> V8Runtime::runModuleFunction;
 
 jobject V8Runtime::javaInstance;
-Isolate* v8_isolate = nullptr;
+Isolate* V8Runtime::v8_isolate = nullptr;
 bool V8Runtime::debuggerEnabled = false;
 bool V8Runtime::DBG = false;
 
@@ -67,6 +69,11 @@ Local<Object> V8Runtime::ModuleObject()
 Local<Function> V8Runtime::RunModuleFunction()
 {
 	return runModuleFunction.Get(v8_isolate);
+}
+
+Local<Array> V8Runtime::ModuleContexts()
+{
+	return moduleContexts.Get(v8_isolate);
 }
 
 // Minimalistic logging function for internal JS
@@ -140,7 +147,7 @@ void V8Runtime::bootstrap(Local<Context> context)
 
 static void logV8Exception(Local<Message> msg, Local<Value> data)
 {
-	HandleScope scope(v8_isolate);
+	HandleScope scope(V8Runtime::v8_isolate);
 
 	// Log reason and location of the error.
 	LOGD(TAG, *String::Utf8Value(msg->Get()));
@@ -198,11 +205,11 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeIn
 
 	Isolate::CreateParams params;
 	Isolate* isolate = Isolate::New(params);
-	v8_isolate = isolate;
+	V8Runtime::v8_isolate = isolate;
 
 	Isolate::Scope isolate_scope(isolate);
-    HandleScope scope(isolate);
-    Local<Context> context = Context::New(isolate);
+	HandleScope scope(isolate);
+	Local<Context> context = Context::New(isolate);
 	context->Enter();
 
 	V8Runtime::globalContext.Reset(isolate, context);
@@ -228,56 +235,56 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeIn
 JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeRunModule
 	(JNIEnv *env, jobject self, jstring source, jstring filename, jobject activityProxy)
 {
-	HandleScope scope(v8_isolate);
+	HandleScope scope(V8Runtime::v8_isolate);
 	titanium::JNIScope jniScope(env);
 
 	if (V8Runtime::moduleObject.IsEmpty()) {
-		Local<Object> module = V8Runtime::Global()->Get(FIXED_ONE_BYTE_STRING(v8_isolate, "Module"))->ToObject(v8_isolate);
-		V8Runtime::moduleObject.Reset(v8_isolate, module);
+		Local<Object> module = V8Runtime::Global()->Get(FIXED_ONE_BYTE_STRING(V8Runtime::v8_isolate, "Module"))->ToObject(V8Runtime::v8_isolate);
+		V8Runtime::moduleObject.Reset(V8Runtime::v8_isolate, module);
 
-		V8Runtime::runModuleFunction.Reset(v8_isolate,
-			Local<Function>::Cast(module->Get(FIXED_ONE_BYTE_STRING(v8_isolate, "runModule"))));
+		V8Runtime::runModuleFunction.Reset(V8Runtime::v8_isolate,
+			Local<Function>::Cast(module->Get(FIXED_ONE_BYTE_STRING(V8Runtime::v8_isolate, "runModule"))));
 	}
 
-	Local<Value> jsSource = TypeConverter::javaStringToJsString(v8_isolate, env, source);
-	Local<Value> jsFilename = TypeConverter::javaStringToJsString(v8_isolate, env, filename);
-	Local<Value> jsActivity = TypeConverter::javaObjectToJsValue(v8_isolate, env, activityProxy);
+	Local<Value> jsSource = TypeConverter::javaStringToJsString(V8Runtime::v8_isolate, env, source);
+	Local<Value> jsFilename = TypeConverter::javaStringToJsString(V8Runtime::v8_isolate, env, filename);
+	Local<Value> jsActivity = TypeConverter::javaObjectToJsValue(V8Runtime::v8_isolate, env, activityProxy);
 
 	Local<Value> args[] = { jsSource, jsFilename, jsActivity };
 	TryCatch tryCatch;
 	V8Runtime::RunModuleFunction()->Call(V8Runtime::ModuleObject(), 3, args);
 
 	if (tryCatch.HasCaught()) {
-		V8Util::openJSErrorDialog(v8_isolate, tryCatch);
-		V8Util::reportException(v8_isolate, tryCatch, true);
+		V8Util::openJSErrorDialog(V8Runtime::v8_isolate, tryCatch);
+		V8Util::reportException(V8Runtime::v8_isolate, tryCatch, true);
 	}
 }
 
 JNIEXPORT jobject JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeEvalString
 	(JNIEnv *env, jobject self, jstring source, jstring filename)
 {
-	HandleScope scope(v8_isolate);
+	HandleScope scope(V8Runtime::v8_isolate);
 	titanium::JNIScope jniScope(env);
 
-	Local<Value> jsSource = TypeConverter::javaStringToJsString(v8_isolate, env, source);
+	Local<Value> jsSource = TypeConverter::javaStringToJsString(V8Runtime::v8_isolate, env, source);
 	if (jsSource.IsEmpty() || !jsSource->IsString()) {
 		LOGE(TAG, "Error converting Javascript string, aborting evalString");
 		return NULL;
 	}
 
-	Local<Value> jsFilename = TypeConverter::javaStringToJsString(v8_isolate, env, filename);
+	Local<Value> jsFilename = TypeConverter::javaStringToJsString(V8Runtime::v8_isolate, env, filename);
 
 	TryCatch tryCatch;
-	Local<Script> script = Script::Compile(jsSource->ToString(v8_isolate), jsFilename->ToString(v8_isolate));
+	Local<Script> script = Script::Compile(jsSource->ToString(V8Runtime::v8_isolate), jsFilename->ToString(V8Runtime::v8_isolate));
 	Local<Value> result = script->Run();
 
 	if (tryCatch.HasCaught()) {
-		V8Util::openJSErrorDialog(v8_isolate, tryCatch);
-		V8Util::reportException(v8_isolate, tryCatch, true);
+		V8Util::openJSErrorDialog(V8Runtime::v8_isolate, tryCatch);
+		V8Util::reportException(V8Runtime::v8_isolate, tryCatch, true);
 		return NULL;
 	}
 
-	return TypeConverter::jsValueToJavaObject(v8_isolate, env, result);
+	return TypeConverter::jsValueToJavaObject(V8Runtime::v8_isolate, env, result);
 }
 
 JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeProcessDebugMessages(JNIEnv *env, jobject self)
@@ -320,7 +327,7 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeAd
 // all activities have been destroyed by the application.
 //
 // When a Persistent handle is Dispose()'d in V8, the internal
-// pointer is not changed, handle->IsEmpty() returns false. 
+// pointer is not changed, handle->IsEmpty() returns false.
 // As a consequence, we have to explicitly reset the handle
 // to an empty handle using Persistent<Type>()
 //
@@ -335,7 +342,7 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeDi
 	// while disposing are cleaned up before our global context
 	// is disposed below.
 	{
-		HandleScope scope(v8_isolate);
+		HandleScope scope(V8Runtime::v8_isolate);
 
 		// Any module that has been require()'d or opened via Window URL
 		// will be cleaned up here. We setup the initial "moduleContexts"
@@ -349,7 +356,7 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeDi
 			// WrappedContext is simply a C++ wrapper for the V8 Context object,
 			// and is used to expose the Context to javascript. See ScriptsModule for
 			// implementation details
-			WrappedContext *wrappedContext = WrappedContext::Unwrap(moduleContext->ToObject(v8_isolate));
+			WrappedContext *wrappedContext = WrappedContext::Unwrap(moduleContext->ToObject(V8Runtime::v8_isolate));
 			ASSERT(wrappedContext != NULL);
 
 			wrappedContext->Dispose();
@@ -379,7 +386,7 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeDi
 	V8Runtime::GlobalContext()->Exit();
 	V8Runtime::globalContext.Reset();
 
-	// Removes the retained global reference to the V8Runtime 
+	// Removes the retained global reference to the V8Runtime
 	env->DeleteGlobalRef(V8Runtime::javaInstance);
 
 	V8Runtime::javaInstance = NULL;
