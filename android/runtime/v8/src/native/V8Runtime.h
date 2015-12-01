@@ -20,6 +20,7 @@ public:
 	static Persistent<Object> krollGlobalObject;
 	static Persistent<Array> moduleContexts;
 	static Isolate* v8_isolate;
+	static Platform* platform;
 
 	static jobject javaInstance;
 

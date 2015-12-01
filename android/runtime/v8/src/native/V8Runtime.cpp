@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <v8.h>
+#include <libplatform/libplatform.h>
 #include <v8-debug.h>
 
 #include "AndroidUtil.h"
@@ -39,9 +40,20 @@ Persistent<Object> V8Runtime::moduleObject;
 Persistent<Function> V8Runtime::runModuleFunction;
 
 jobject V8Runtime::javaInstance;
+Platform* V8Runtime::platform = nullptr;
 Isolate* V8Runtime::v8_isolate = nullptr;
 bool V8Runtime::debuggerEnabled = false;
 bool V8Runtime::DBG = false;
+
+class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
+ public:
+  virtual void* Allocate(size_t length) {
+    void* data = AllocateUninitialized(length);
+    return data == NULL ? data : memset(data, 0, length);
+  }
+  virtual void* AllocateUninitialized(size_t length) { return malloc(length); }
+  virtual void Free(void* data, size_t) { free(data); }
+};
 
 /* static */
 void V8Runtime::collectWeakRef(Persistent<Value> ref, void *parameter)
@@ -184,6 +196,14 @@ using namespace titanium;
  */
 JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeInit(JNIEnv *env, jobject self, jboolean useGlobalRefs, jint debuggerPort, jboolean DBG, jboolean profilerEnabled)
 {
+	// Initialize V8.
+	V8::InitializeICU();
+	// TODO Enable this when we use snapshots
+	//V8::InitializeExternalStartupData(argv[0]);
+	V8Runtime::platform = platform::CreateDefaultPlatform();
+	V8::InitializePlatform(V8Runtime::platform);
+	V8::Initialize();
+
 	if (profilerEnabled) {
 		char* argv[] = { const_cast<char*>(""), const_cast<char*>("--expose-gc") };
 		int argc = sizeof(argv)/sizeof(*argv);
@@ -192,10 +212,6 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeIn
 
 	titanium::JNIScope jniScope(env);
 
-	// Log all uncaught V8 exceptions.
-	V8::AddMessageListener(logV8Exception);
-	V8::SetCaptureStackTraceForUncaughtExceptions(true);
-
 	JavaObject::useGlobalRefs = useGlobalRefs;
 	V8Runtime::debuggerEnabled = debuggerPort >= 0;
 	V8Runtime::DBG = DBG;
@@ -203,11 +219,19 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeIn
 	V8Runtime::javaInstance = env->NewGlobalRef(self);
 	JNIUtil::initCache();
 
-	Isolate::CreateParams params;
-	Isolate* isolate = Isolate::New(params);
-	V8Runtime::v8_isolate = isolate;
+	// Create a new Isolate and make it the current one.
+	ArrayBufferAllocator allocator;
+	Isolate::CreateParams create_params;
+	create_params.array_buffer_allocator = &allocator;
+	Isolate* isolate = Isolate::New(create_params);
 
+	V8Runtime::v8_isolate = isolate;
 	Isolate::Scope isolate_scope(isolate);
+
+	// Log all uncaught V8 exceptions.
+	V8::AddMessageListener(&logV8Exception);
+	V8::SetCaptureStackTraceForUncaughtExceptions(true);
+
 	HandleScope scope(isolate);
 	Local<Context> context = Context::New(isolate);
 	context->Enter();
@@ -396,6 +420,12 @@ JNIEXPORT void JNICALL Java_org_appcelerator_kroll_runtime_v8_V8Runtime_nativeDi
 	// So as our last act, run IdleNotification until it returns true so we can clean up all
 	// the stuff we just released references for above.
 	while (!V8Runtime::v8_isolate->IdleNotification(100));
+
+	// Do final cleanup
+	V8Runtime::v8_isolate->Dispose();
+	V8::Dispose();
+	V8::ShutdownPlatform();
+	delete V8Runtime::platform;
 }
 
 jint JNI_OnLoad(JavaVM *vm, void *reserved)
