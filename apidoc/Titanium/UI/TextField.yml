@@ -363,7 +363,7 @@ properties:
         When asking for a specific kind of user input, such as a phone number or email 
         address, you should always specify the appropriate keyboard type.
     type: Number
-    constants: Titanium.UI.KEYBOARD_TYPE_*
+    constants: Titanium.UI.KEYBOARD_*
     default: <Titanium.UI.KEYBOARD_TYPE_DEFAULT>
     
   - name: leftButton
